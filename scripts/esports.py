@@ -528,23 +528,27 @@ def maps(game, matches, liquipedia, now=None):
             if "continue" not in reply:
                 break
             params.update(reply["continue"])
-    candidates = [c for c in candidates
-                  if any(abs(c["time"] - start(m)) < 24 * 3600 for m in targets)]
-    teams = sorted({name for c in candidates for name in c["teams"]})[:80]
+    def near(c, m):
+        return abs(c["time"] - start(m)) <= (6 * 3600 if c["clock"] else 24 * 3600)
+
+    candidates = [c for c in candidates if any(near(c, m) for m in targets)]
+    # Team templates are often short ("ttg", "spirit black"): their team pages name them.
+    teams = sorted({name for c in candidates for name in c["teams"]})
     pages = {}
-    if teams:
+    for batch in range(0, min(len(teams), 180), 60):
+        chunk = teams[batch:batch + 60]
         reply = liquipedia.query(wiki, action="expandtemplates", prop="wikitext",
-                                 text="\n".join(f"{{{{TeamPage|1={name}}}}}" for name in teams))
+                                 text="\n".join(f"{{{{TeamPage|1={name}}}}}" for name in chunk))
         lines = reply.get("expandtemplates", {}).get("wikitext", "").strip("\n").split("\n")
-        if len(lines) == len(teams):
-            pages = {name.lower(): plain(line, 60) for name, line in zip(teams, lines)}
+        if len(lines) == len(chunk):
+            pages.update((name.lower(), plain(line, 60)) for name, line in zip(chunk, lines))
     found = 0
     for m in targets:
         best = None
         for c in candidates:
             fit = pair(m, c, pages)
             off = abs(c["time"] - start(m))
-            if not fit or off > (6 * 3600 if c["clock"] else 24 * 3600):
+            if not fit or not near(c, m):
                 continue
             rank = (fit[0], not (m["running"] and c["finished"]), -off)
             if best is None or rank > best[0]:
