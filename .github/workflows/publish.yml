@@ -1,0 +1,36 @@
+name: Publish feeds
+
+on:
+  schedule:
+    # Every 15 minutes; GitHub may start scheduled runs a little late.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the esports feed
+        env:
+          PANDASCORE_KEY: ${{ secrets.PANDASCORE_KEY }}
+        run: python3 scripts/esports.py
+      - name: Index
+        run: echo '{"esports":"esports/<game>.json"}' > site/index.json
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
