@@ -14,9 +14,12 @@ GitHub Pages every 15 minutes by `.github/workflows/publish.yml`.
   `valorant`, `r6siege`, `ow`, `rl` and `codmw`, built by `scripts/esports.py` from the PandaScore
   API.
 
-Each file: `{"game", "updated", "matches": [{"id", "running", "begin_at", "teams": [{"id",
-"name", "short", "image"} | null], "score", "best_of", "games": [{"position", "state", "winner"}],
-"event", "tier", "lineups": [[names], [names]]}]}`.
+Each file: `{"game", "updated", "matches": [...]}`. A match: `id`, `running`, `begin_at`,
+`teams` (two of `{"id", "name", "short", "image", "location"}` or `null`), `score`, `best_of`,
+`games` (`{"position", "state", "winner", "begin_at", "length"}`), `event`, `league_image`,
+`stage`, `tier`, `prizepool`, `online`, `streams` (`{"language", "platform", "official",
+"main"}`) and `lineups` (two lists of `{"name", "real_name", "nationality", "role", "age",
+"image"}`). Map names, picks and in-game statistics are not part of the free plan.
 
 ## Setup
 
