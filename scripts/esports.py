@@ -2,13 +2,18 @@
 
 Reads PANDASCORE_KEY from the environment and writes site/esports/<game>.json. Uses about 25
 requests per run (two match lists and one teams list per discipline), well inside the free plan's
-1000 requests an hour at one run every 15 minutes. Only what the free plan lists is included:
-map names, picks and in-game statistics need a paid plan.
+1000 requests an hour at one run every 15 minutes. Only what the free plan lists comes from
+PandaScore; map names, round scores and picks of live matches come from Liquipedia (see maps()).
 """
+import calendar
+import gzip
+import http.client
 import json
 import os
+import re
 import sys
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,6 +22,31 @@ API = "https://api.pandascore.co"
 IMAGES = "https://cdn-api.pandascore.co/"
 GAMES = ["csgo", "dota2", "lol", "valorant", "r6siege", "ow", "rl", "codmw"]
 PER_GAME = 20
+
+# Liquipedia's MediaWiki API: at most one request every 2 seconds over one connection, gzip, an
+# identifying User-Agent, no action=parse and no HTML pages. Its content is CC-BY-SA 3.0.
+LIQUIPEDIA = "liquipedia.net"
+USER_AGENT = "luma-feeds/1.0 (https://github.com/eluz1ve/luma-feeds)"
+INTERVAL = 2.2
+# Liquipedia's share of a run, so the feed stays inside its 15 minutes.
+BUDGET = 240
+# The wiki of each discipline played on several maps; a Dota 2 or LoL game has a single map.
+WIKIS = {"csgo": "counterstrike", "valorant": "valorant", "r6siege": "rainbowsix",
+         "ow": "overwatch", "rl": "rocketleague", "codmw": "callofduty"}
+# Upcoming matches this close to their start may already have their maps picked.
+SOON = 3600
+# Hours from UTC of the zones Liquipedia writes after match times, e.g. {{Abbr/CEST}}.
+ZONES = {"utc": 0, "gmt": 0, "wet": 0, "bst": 1, "west": 1, "cet": 1, "cest": 2, "eet": 2,
+         "sast": 2, "eest": 3, "msk": 3, "trt": 3, "ast": 3, "eat": 3, "gst": 4, "pkt": 5,
+         "ist": 5.5, "ict": 7, "wib": 7, "sgt": 8, "pht": 8, "hkt": 8, "awst": 8, "jst": 9,
+         "kst": 9, "aest": 10, "aedt": 11, "nzst": 12, "nzdt": 13, "brt": -3, "art": -3,
+         "clt": -4, "edt": -4, "est": -5, "cdt": -5, "cst": -6, "mdt": -6, "mst": -7,
+         "pdt": -7, "pst": -8}
+MONTHS = {name: number for number, name in enumerate(
+    ["january", "february", "march", "april", "may", "june", "july", "august", "september",
+     "october", "november", "december"], 1)}
+# Words team names are written with or without, e.g. "FURIA Esports" and "FURIA".
+FILLER = re.compile(r"\b(e-?sports?|gaming|team|club|clan|gg)\b")
 
 
 def get(path, key):
@@ -146,6 +176,384 @@ def game_feed(game, key):
     return {"game": game, "updated": int(time.time()), "matches": matches}
 
 
+class Liquipedia:
+    """Liquipedia's MediaWiki API over one connection, one request every INTERVAL seconds."""
+
+    def __init__(self, budget=BUDGET):
+        self.connection = None
+        self.last = 0.0
+        self.deadline = time.monotonic() + budget
+        self.requests = 0
+        # Set when Liquipedia refuses or throttles: no more requests this run.
+        self.stopped = False
+
+    def query(self, wiki, **params):
+        if self.stopped or time.monotonic() > self.deadline:
+            raise TimeoutError("Liquipedia is done for this run")
+        wait = self.last + INTERVAL - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        params.update(format="json", formatversion="2")
+        path = f"/{wiki}/api.php?" + urllib.parse.urlencode(params)
+        if self.connection is None:
+            self.connection = http.client.HTTPSConnection(LIQUIPEDIA, timeout=20)
+        try:
+            self.connection.request("GET", path, headers={
+                "User-Agent": USER_AGENT, "Accept-Encoding": "gzip", "Accept": "application/json"})
+            response = self.connection.getresponse()
+            body = response.read()
+        except (OSError, http.client.HTTPException):
+            self.connection.close()
+            self.connection = None
+            raise
+        finally:
+            self.last = time.monotonic()
+            self.requests += 1
+        if response.status != 200:
+            self.stopped = response.status in (403, 429) or response.status >= 500
+            raise OSError(f"Liquipedia {wiki}: HTTP {response.status}")
+        if response.getheader("Content-Encoding") == "gzip":
+            body = gzip.decompress(body)
+        reply = json.loads(body)
+        if "error" in reply:
+            raise ValueError(f"Liquipedia {wiki}: {reply['error'].get('code')}")
+        return reply
+
+    def close(self):
+        if self.connection is not None:
+            self.connection.close()
+
+
+def balanced(source, start):
+    """The end of the template opening at `start`, past its closing braces."""
+    depth = 0
+    index = start
+    while index < len(source) - 1:
+        pair = source[index:index + 2]
+        if pair == "{{":
+            depth += 1
+            index += 2
+        elif pair == "}}":
+            depth -= 1
+            index += 2
+            if depth == 0:
+                return index
+        else:
+            index += 1
+    return None
+
+
+def templates(source, names):
+    """Every `{{Name ...}}` of these names in wikitext, as its text between the braces."""
+    pattern = re.compile(r"\{\{\s*(?:" + "|".join(names) + r")\s*(?=[|}])", re.I)
+    found = []
+    for opening in pattern.finditer(source):
+        end = balanced(source, opening.start())
+        if end:
+            found.append(source[opening.start() + 2:end - 2])
+    return found
+
+
+def fields(body):
+    """A template's positional and named parameters, split at its own `|` only."""
+    parts, depth, start = [], 0, 0
+    index = 0
+    while index < len(body):
+        pair = body[index:index + 2]
+        if pair in ("{{", "[["):
+            depth += 1
+            index += 2
+            continue
+        if pair in ("}}", "]]"):
+            depth -= 1
+            index += 2
+            continue
+        if body[index] == "|" and depth == 0:
+            parts.append(body[start:index])
+            start = index + 1
+        index += 1
+    parts.append(body[start:])
+    positional, named = [], {}
+    for part in parts[1:]:
+        name, equals, value = part.partition("=")
+        if equals and re.fullmatch(r"\s*[\w ]+\s*", name):
+            named[name.strip().lower()] = value.strip()
+        else:
+            positional.append(part.strip())
+    return positional, named
+
+
+def plain(value, limit):
+    """Wikitext without links' targets, templates or markup, e.g. "[[Dust II (map)|Dust II]]"."""
+    value = re.sub(r"\[\[(?:[^|\]]*\|)?([^\]]*)\]\]", r"\1", value or "")
+    value = re.sub(r"\{\{.*?\}\}|'{2,}|<[^>]*>", "", value)
+    return " ".join(value.split())[:limit]
+
+
+def number(value):
+    value = (value or "").strip()
+    if re.fullmatch(r"\d+", value):
+        return int(value)
+    if re.fullmatch(r"\d+\.\d+", value):
+        return float(value)
+    return None
+
+
+def map_score(named):
+    """Both sides' score of one map: `score1`, else the halves, e.g. CS's `t1t` and `o1t1ct`."""
+    def side(team):
+        direct = number(named.get(f"score{team}"))
+        if direct is not None:
+            return direct
+        halves = [number(value) for key, value in named.items()
+                  if re.fullmatch(rf"(o\d+)?t{team}(ot)?(t|ct|atk|def)", key)]
+        halves = [half for half in halves if half is not None]
+        return sum(halves) if halves else None
+
+    score = [side(1), side(2)]
+    return score if None not in score else None
+
+
+def lp_time(value):
+    """Unix seconds of a Liquipedia match date and whether it has a time of day."""
+    value = value or ""
+    date = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", value)
+    if date:
+        year, month, day = (int(part) for part in date.groups())
+    else:
+        date = re.search(r"([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})", value)
+        if not date or date.group(1).lower() not in MONTHS:
+            return None, False
+        year, month, day = int(date.group(3)), MONTHS[date.group(1).lower()], int(date.group(2))
+    clock = re.search(r"(\d{1,2}):(\d{2})", value[date.end():])
+    zone = re.search(r"\{\{\s*abbr/(\w+)\s*\}\}", value, re.I)
+    offset = ZONES.get(zone.group(1).lower(), 0) if zone else 0
+    try:
+        seconds = calendar.timegm((year, month, day, 0, 0, 0))
+    except (ValueError, OverflowError):
+        return None, False
+    if not clock:
+        return seconds, False
+    return seconds + int(clock.group(1)) * 3600 + int(clock.group(2)) * 60 - int(offset * 3600), True
+
+
+def opponent(value):
+    """The team template or literal name of `{{TeamOpponent|navi|score=2}}`."""
+    found = templates(value or "", ["TeamOpponent", "LiteralOpponent"])
+    if not found:
+        return ""
+    positional, named = fields(found[0])
+    return plain(named.get("template") or (positional[0] if positional else ""), 60)
+
+
+def veto(value):
+    """`{{MapVeto}}` as (kind, side, map) in veto order, side 0 for the decider."""
+    found = templates(value or "", ["MapVeto"])
+    if not found:
+        return []
+    _, named = fields(found[0])
+    first = 2 if named.get("firstpick", "").strip() == "2" else 1
+    kinds = [kind.strip().lower() for kind in named.get("types", "").split(",")]
+    steps = []
+    for row, kind in enumerate(kinds, 1):
+        if kind == "decider":
+            name = plain(named.get("decider"), 32)
+            if name:
+                steps.append(("decider", 0, name))
+            continue
+        for side in (first, 3 - first):
+            name = plain(named.get(f"t{side}map{row}"), 32)
+            if name and kind:
+                steps.append((kind[:12], side, name))
+    return steps
+
+
+def lp_matches(source):
+    """The Match2 matches of a page: `{{Match}}` in brackets and lists, `{{MatchPage}}` alone."""
+    source = re.sub(r"<!--.*?-->", "", source, flags=re.S)
+    found = []
+    for body in templates(source, ["Match", "MatchPage"]):
+        _, named = fields(body)
+        teams = [opponent(named.get("opponent1")), opponent(named.get("opponent2"))]
+        when, clock = lp_time(named.get("date"))
+        if not all(teams) or when is None:
+            continue
+        steps = veto(named.get("mapveto"))
+        maps = {}
+        for key, value in named.items():
+            position = re.fullmatch(r"map(\d+)", key)
+            entry = templates(value, ["Map", "ApiMap"])
+            if not position or not entry:
+                continue
+            _, details = fields(entry[0])
+            maps[int(position.group(1))] = {
+                "map": plain(details.get("map"), 32),
+                "score": map_score(details),
+            }
+        # Maps not written yet are the picks in veto order, then the decider.
+        picks = [(side, name) for kind, side, name in steps if kind in ("pick", "decider")]
+        for position, (side, name) in enumerate(picks, 1):
+            entry = maps.setdefault(position, {"map": "", "score": None})
+            entry["map"] = entry["map"] or name
+        for entry in maps.values():
+            entry["side"] = next((side for side, name in picks
+                                  if name.lower() == entry["map"].lower()), None)
+        found.append({
+            "teams": teams,
+            "time": when,
+            "clock": clock,
+            "finished": named.get("finished", "").strip().lower() in ("true", "1", "yes"),
+            "maps": maps,
+            "veto": steps,
+        })
+    return found
+
+
+def names(*values):
+    """Ways a team name is written: lower-case letters and digits, with and without filler."""
+    found = set()
+    for value in values:
+        value = unicodedata.normalize("NFKD", value or "").lower()
+        value = "".join(ch for ch in value if not unicodedata.combining(ch))
+        for variant in (value, FILLER.sub(" ", value)):
+            variant = re.sub(r"[\W_]+", "", variant)
+            if variant:
+                found.add(variant)
+    return found
+
+
+def likeness(ours, theirs):
+    """2 when a name is the same, 1 when one holds the other, else 0."""
+    if ours & theirs:
+        return 2
+    if any(len(a) >= 3 and len(b) >= 3 and (a in b or b in a) for a in ours for b in theirs):
+        return 1
+    return 0
+
+
+def pair(m, candidate, pages):
+    """How well a Liquipedia match fits a feed match, and whether its teams are the other way."""
+    ours = [names(team["name"], team["short"]) for team in m["teams"]]
+    theirs = [names(name, pages.get(name.lower(), "")) for name in candidate["teams"]]
+    straight = likeness(ours[0], theirs[0]), likeness(ours[1], theirs[1])
+    crossed = likeness(ours[0], theirs[1]), likeness(ours[1], theirs[0])
+    best = max((straight, False), (crossed, True), key=lambda option: sum(option[0]))
+    (first, second), swapped = best
+    if min(first, second) == 0 or first + second < 3:
+        return None
+    return first + second, swapped
+
+
+def apply_maps(m, candidate, swapped):
+    """Adds Liquipedia's map names, round scores, picks and veto to a feed match."""
+    ids = [team["id"] for team in m["teams"]]
+    if swapped:
+        ids.reverse()
+    side_id = {1: ids[0], 2: ids[1]}
+    games = {game["position"]: game for game in m["games"]}
+    named = False
+    for position, entry in sorted(candidate["maps"].items()):
+        if position > max(m["best_of"], len(m["games"])) or not (entry["map"] or entry["score"]):
+            continue
+        game = games.get(position)
+        if game is None:
+            game = {"position": position, "state": "waiting", "winner": None, "begin_at": "",
+                    "length": None}
+            m["games"].append(game)
+        if entry["map"]:
+            game["map"] = entry["map"]
+            named = True
+        score = entry["score"]
+        if score and (any(score) or game["state"] != "waiting"):
+            game["score"] = score[::-1] if swapped else score
+        if entry["side"] == 0:
+            game["decider"] = True
+        elif entry["side"]:
+            game["picked_by"] = side_id[entry["side"]]
+    m["games"].sort(key=lambda game: game["position"])
+    if candidate["veto"]:
+        m["veto"] = [{"type": kind, "team": side_id.get(side), "map": name}
+                     for kind, side, name in candidate["veto"]]
+    if named:
+        m["maps_source"] = "Liquipedia"
+    return named
+
+
+def maps(game, matches, liquipedia, now=None):
+    """Map names for running and soon-starting matches from the discipline's Liquipedia wiki.
+
+    Recent edits on the wiki (tournament pages and Valorant's Match: pages) name the pages with
+    Match2 matches; each page is read once per run, its team templates resolved to team names in
+    one more request, and a match is paired by both teams and its start time.
+    """
+    wiki = WIKIS.get(game)
+    now = now or time.time()
+
+    def start(m):
+        try:
+            return calendar.timegm(time.strptime(m["begin_at"][:19], "%Y-%m-%dT%H:%M:%S"))
+        except ValueError:
+            return None
+
+    targets = [m for m in matches if all(m["teams"]) and start(m) is not None
+               and (m["running"] or start(m) - now < SOON)]
+    if not wiki or not targets:
+        return 0
+    earliest = min(start(m) for m in targets)
+    back = min(max(now - earliest + 3 * 3600, 3 * 3600), 12 * 3600)
+    titles = set()
+    params = {"action": "query", "generator": "recentchanges", "grcnamespace": "0|130",
+              "grctoponly": 1, "grclimit": 500, "grctype": "edit|new",
+              "grcend": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - back)),
+              "prop": "templates", "tltemplates": "Template:Match|Template:MatchPage",
+              "tllimit": "max"}
+    for _ in range(4):
+        reply = liquipedia.query(wiki, **params)
+        titles.update(page["title"] for page in reply.get("query", {}).get("pages", [])
+                      if page.get("templates"))
+        if "continue" not in reply:
+            break
+        params.update(reply["continue"])
+    candidates = []
+    ordered = sorted(titles)
+    for batch in range(0, len(ordered), 20):
+        params = {"action": "query", "prop": "revisions", "rvprop": "content",
+                  "rvslots": "main", "titles": "|".join(ordered[batch:batch + 20])}
+        for _ in range(3):
+            reply = liquipedia.query(wiki, **params)
+            for page in reply.get("query", {}).get("pages", []):
+                for revision in page.get("revisions", []):
+                    content = revision.get("slots", {}).get("main", {}).get("content", "")
+                    candidates.extend(lp_matches(content))
+            if "continue" not in reply:
+                break
+            params.update(reply["continue"])
+    candidates = [c for c in candidates
+                  if any(abs(c["time"] - start(m)) < 24 * 3600 for m in targets)]
+    teams = sorted({name for c in candidates for name in c["teams"]})[:80]
+    pages = {}
+    if teams:
+        reply = liquipedia.query(wiki, action="expandtemplates", prop="wikitext",
+                                 text="\n".join(f"{{{{TeamPage|1={name}}}}}" for name in teams))
+        lines = reply.get("expandtemplates", {}).get("wikitext", "").strip("\n").split("\n")
+        if len(lines) == len(teams):
+            pages = {name.lower(): plain(line, 60) for name, line in zip(teams, lines)}
+    found = 0
+    for m in targets:
+        best = None
+        for c in candidates:
+            fit = pair(m, c, pages)
+            off = abs(c["time"] - start(m))
+            if not fit or off > (6 * 3600 if c["clock"] else 24 * 3600):
+                continue
+            rank = (fit[0], not (m["running"] and c["finished"]), -off)
+            if best is None or rank > best[0]:
+                best = (rank, c, fit[1])
+        if best and apply_maps(m, best[1], best[2]):
+            found += 1
+    return found
+
+
 def main():
     key = os.environ.get("PANDASCORE_KEY", "").strip()
     if not key:
@@ -153,6 +561,7 @@ def main():
     out = os.path.join(os.path.dirname(__file__), "..", "site", "esports")
     os.makedirs(out, exist_ok=True)
     failures = 0
+    liquipedia = Liquipedia()
     for game in GAMES:
         try:
             feed = game_feed(game, key)
@@ -160,9 +569,16 @@ def main():
             failures += 1
             print(f"{game}: {error}", file=sys.stderr)
             continue
+        named = 0
+        try:
+            named = maps(game, feed["matches"], liquipedia)
+        except Exception as error:  # Map names are extra: the feed goes out without them.
+            print(f"{game}: no map names, {error!r}", file=sys.stderr)
         with open(os.path.join(out, f"{game}.json"), "w", encoding="utf8") as file:
             json.dump(feed, file, ensure_ascii=False, separators=(",", ":"))
-        print(f"{game}: {len(feed['matches'])} matches")
+        print(f"{game}: {len(feed['matches'])} matches, {named} with map names")
+    liquipedia.close()
+    print(f"Liquipedia: {liquipedia.requests} requests")
     if failures == len(GAMES):
         sys.exit("every discipline failed")
 
