@@ -15,7 +15,7 @@ GitHub Pages every 15 minutes by `.github/workflows/publish.yml`.
   API.
 
 Each file: `{"game", "updated", "matches": [{"id", "running", "begin_at", "teams": [{"id",
-"name", "short"} | null], "score", "best_of", "games": [{"position", "state", "winner"}],
+"name", "short", "image"} | null], "score", "best_of", "games": [{"position", "state", "winner"}],
 "event", "tier", "lineups": [[names], [names]]}]}`.
 
 ## Setup

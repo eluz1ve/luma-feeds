@@ -13,6 +13,7 @@ import urllib.parse
 import urllib.request
 
 API = "https://api.pandascore.co"
+LOGOS = "https://cdn-api.pandascore.co/"
 GAMES = ["csgo", "dota2", "lol", "valorant", "r6siege", "ow", "rl", "codmw"]
 PER_GAME = 20
 
@@ -39,7 +40,16 @@ def team(entry):
     if not isinstance(opponent.get("id"), int):
         return None
     name = text(opponent.get("name"), 40)
-    return {"id": opponent["id"], "name": name, "short": text(opponent.get("acronym"), 12) or name}
+    # The dark-mode logo suits Luma's dark cards; PandaScore's CDN only.
+    image = opponent.get("dark_mode_image_url") or opponent.get("image_url") or ""
+    if not image.startswith(LOGOS):
+        image = ""
+    return {
+        "id": opponent["id"],
+        "name": name,
+        "short": text(opponent.get("acronym"), 12) or name,
+        "image": image,
+    }
 
 
 def match(item):
