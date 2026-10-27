@@ -19,7 +19,7 @@ Each file: `{"game", "updated", "matches": [...]}`. A match: `id`, `running`, `b
 `games` (`{"position", "state", "winner", "begin_at", "length"}`), `event`, `league_image`,
 `stage`, `tier`, `prizepool`, `online`, `streams` (`{"language", "platform", "official",
 "main"}`) and `lineups` (two lists of `{"name", "real_name", "nationality", "role", "age",
-"image"}`; PandaScore lists a team's whole active roster, up to seven players).
+"image"}`, up to ten people; from PandaScore, a team's whole active roster).
 
 PandaScore's free plan has no map names, so for running matches and those starting within the
 hour the feed looks them up on [Liquipedia](https://liquipedia.net) (Counter-Strike, Valorant,
@@ -27,23 +27,28 @@ Rainbow Six, Overwatch, Rocket League and Call of Duty; a Dota 2 or LoL game is 
 finds the match, a game may also carry `map` (its name), `score` (rounds or points, in the teams'
 order), `picked_by` (the id of the team that picked it) or `decider: true`, and the match
 carries `maps_source: "Liquipedia"` and, when Liquipedia has it, `veto` (`{"type", "team",
-"map"}` in veto order; `team` is `null` for the decider). The tournament's participants on
-Liquipedia also tell who starts: a lineup player who doesn't carries `substitute: true` (a
-substitute, a player who left, a coach or someone the tournament doesn't list), and a coach's empty
-`role` becomes `"coach"`. When Liquipedia lists the team's full starting lineup, everyone else is
-a substitute; when it lists only part of it, only the people it names as substitutes or coaches
-are (Valorant's matches on their own Match: pages name no tournament, so they go without). Without
-Liquipedia the feed is built as before, just without them.
+"map"}` in veto order; `team` is `null` for the decider).
+
+The tournament's participants on Liquipedia also give the lineups. When Liquipedia lists a team's
+whole roster for the tournament, its lineup is Liquipedia's: the starters, then the substitutes
+and coaches (`substitute: true`, a coach's `role` is `"coach"`), each with PandaScore's real name,
+nationality, age and photo when PandaScore lists the same nickname (else the Liquipedia flag as
+nationality); players PandaScore still lists who left the team are not in it, and the match
+carries `lineups_source` (`["Liquipedia", ""]` per side). When Liquipedia lists only part of the
+roster, the lineup stays PandaScore's with the people Liquipedia names as substitutes or coaches
+marked. Valorant's matches on their own Match: pages name no tournament, so they go without.
+Without Liquipedia the feed is built as before, just without them.
 
 ## Attribution
 
-Map names, round scores, picks, vetoes and substitutes come from
+Map names, round scores, picks, vetoes and lineups marked as Liquipedia's come from
 [Liquipedia](https://liquipedia.net) and are licensed under
 [CC-BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/); apps showing them credit
 Liquipedia. The script reads them through Liquipedia's MediaWiki API under its
 [terms of use](https://liquipedia.net/api-terms-of-use): one request every two seconds over one
 connection, gzip, an identifying User-Agent and no HTML pages, about 15–20 requests a run.
-Match lists, teams, logos and lineups come from [PandaScore](https://pandascore.co).
+Match lists, teams, logos, photos and the other lineups come from
+[PandaScore](https://pandascore.co).
 
 ## Setup
 

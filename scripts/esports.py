@@ -3,7 +3,7 @@
 Reads PANDASCORE_KEY from the environment and writes site/esports/<game>.json. Uses about 25
 requests per run (two match lists and one teams list per discipline), well inside the free plan's
 1000 requests an hour at one run every 15 minutes. Only what the free plan lists comes from
-PandaScore; map names, round scores, picks and substitutes of live matches come from Liquipedia
+PandaScore; map names, round scores, picks and lineups of live matches come from Liquipedia
 (see maps()).
 """
 import calendar
@@ -493,7 +493,8 @@ def nick(value):
 
 def lp_rosters(source):
     """The teams of a tournament's `{{TeamParticipants}}` with the nicknames of their starters,
-    bench and coaches, each a set of the name shown and the player page's.
+    bench and coaches, each a set of the name shown and the player page's, and its people in
+    that order with the name shown and their flag.
 
     A starter has no `status` (substitutes have `sub`, players who left `former`), is not staff
     and has not `played=false`. A team with `import=true` takes its players from Liquipedia's
@@ -509,24 +510,30 @@ def lp_rosters(source):
             if not team or not persons:
                 continue
             starters, bench, coaches = [], [], []
+            people = {"starter": [], "bench": [], "coach": []}
             for person in templates(persons[0], ["Person"]):
                 given, details = fields(person)
-                handles = {nick(plain(given[0] if given else details.get("1"), 40)),
-                           nick(re.sub(r"\(.*\)", "", details.get("link", "")))} - {""}
+                shown = plain(given[0] if given else details.get("1"), 24)
+                handles = {nick(shown), nick(re.sub(r"\(.*\)", "", details.get("link", "")))} - {""}
                 role = details.get("role", "")
                 if not handles:
                     continue
                 if details.get("type", "").lower() == "staff" or STAFF.search(role):
-                    if "coach" in role.lower():
-                        coaches.append(handles)
+                    if "coach" not in role.lower():
+                        continue
+                    kind, group = "coach", coaches
                 elif details.get("status") or details.get("played", "").lower() in (
                         "false", "no", "n", "0"):
-                    bench.append(handles)
+                    kind, group = "bench", bench
                 else:
-                    starters.append(handles)
+                    kind, group = "starter", starters
+                group.append(handles)
+                people[kind].append({"name": shown, "flag": plain(details.get("flag", ""), 8),
+                                     "kind": kind, "handles": handles})
             imported = named.get("import", "").lower() in ("true", "yes", "1")
             rosters.append({"team": team, "starters": starters, "bench": bench,
-                            "coaches": coaches, "complete": not imported})
+                            "coaches": coaches, "complete": not imported,
+                            "people": people["starter"] + people["bench"] + people["coach"]})
     return rosters
 
 
@@ -586,8 +593,55 @@ def apply_lineup(players, roster, size):
     return marked
 
 
+def matched(players, people):
+    """Liquipedia's people (by index) mapped to the feed players they are, each found once: by
+    nickname, then by one nickname holding the other ("snow" and "Snowzin")."""
+    keys = [nick(player["name"]) for player in players]
+    found, free = {}, set(range(len(players)))
+    for exact in (True, False):
+        for index, person in enumerate(people):
+            if index in found:
+                continue
+            fits = [player for player in free if keys[player] and (
+                keys[player] in person["handles"] if exact else len(keys[player]) >= 3 and any(
+                    len(handle) >= 3 and (keys[player] in handle or handle in keys[player])
+                    for handle in person["handles"]))]
+            if len(fits) == 1:
+                found[index] = fits[0]
+                free.discard(fits[0])
+    return found
+
+
+def lp_lineup(players, roster, size):
+    """The team's lineup for the tournament as Liquipedia lists it: its starters, then its bench
+    and coaches, each with PandaScore's details (real name, nationality, photo) when PandaScore
+    lists the same person. People PandaScore lists who aren't on Liquipedia (players who left)
+    are not in it. None unless Liquipedia lists the whole roster with at least `size` starters.
+    """
+    if not roster.get("complete") or len(roster.get("starters", [])) < size:
+        return None
+    people = roster["people"]
+    found = matched(players, people)
+    lineup = []
+    for index, person in enumerate(people[:10]):
+        if index in found:
+            player = dict(players[found[index]])
+        else:
+            player = {"name": "", "real_name": "", "nationality": person["flag"].upper(),
+                      "role": "", "age": None, "image": None}
+        player["name"] = person["name"]
+        if person["kind"] != "starter":
+            player["substitute"] = True
+            if person["kind"] == "coach" and not player["role"]:
+                player["role"] = "coach"
+        lineup.append(player)
+    return lineup
+
+
 def lineups(wiki, paired, rosters, pages, liquipedia):
-    """Marks the substitutes in paired matches' lineups from their tournament's participants.
+    """Paired matches' lineups from their tournament's participants: Liquipedia's own lineup
+    where it lists the whole team (`lineups_source` then names it for that side), else
+    PandaScore's with its substitutes marked.
 
     `paired` holds (feed match, Liquipedia match, teams swapped); `rosters` the participants of
     each page read so far. A stage's page often lists none, so the pages above it are read too.
@@ -635,8 +689,16 @@ def lineups(wiki, paired, rosters, pages, liquipedia):
     marked = set()
     for m, side, titles, team in sides:
         roster = find(titles, team)
-        lineup = (apply_lineup(m["lineups"][side], roster, STARTING.get(wiki, 5))
-                  if isinstance(roster, dict) else None)
+        if not isinstance(roster, dict):
+            continue
+        size = STARTING.get(wiki, 5)
+        lineup = lp_lineup(m["lineups"][side], roster, size)
+        if lineup:
+            m["lineups"][side] = lineup
+            m.setdefault("lineups_source", ["", ""])[side] = "Liquipedia"
+            marked.add(id(m))
+            continue
+        lineup = apply_lineup(m["lineups"][side], roster, size)
         if lineup and any(player.get("substitute") for player in lineup):
             m["lineups"][side] = lineup
             marked.add(id(m))
@@ -644,13 +706,13 @@ def lineups(wiki, paired, rosters, pages, liquipedia):
 
 
 def maps(game, matches, liquipedia, now=None):
-    """Map names and substitutes for running and soon-starting matches from the discipline's
-    Liquipedia wiki; how many matches got map names and how many substitutes.
+    """Map names and lineups for running and soon-starting matches from the discipline's
+    Liquipedia wiki; how many matches got map names and how many lineups.
 
     Recent edits on the wiki (tournament pages and Valorant's Match: pages) name the pages with
     Match2 matches; each page is read once per run, its team templates resolved to team names in
     one more request, and a match is paired by both teams and its start time. Its tournament's
-    participants then tell starters from substitutes (see lineups()).
+    participants then give its lineups (see lineups()).
     """
     wiki = WIKIS.get(game)
     now = now or time.time()
@@ -757,7 +819,7 @@ def main():
         with open(os.path.join(out, f"{game}.json"), "w", encoding="utf8") as file:
             json.dump(feed, file, ensure_ascii=False, separators=(",", ":"))
         print(f"{game}: {len(feed['matches'])} matches, {named} with map names, "
-              f"{subs} with substitutes")
+              f"{subs} with lineups from Liquipedia")
     liquipedia.close()
     print(f"Liquipedia: {liquipedia.requests} requests")
     if failures == len(GAMES):
