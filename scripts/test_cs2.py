@@ -9,9 +9,10 @@ import cs2  # noqa: E402
 NOW = 1_793_400_000
 
 
-def opponent(name, short, score=-1):
+def opponent(name, short, score=-1, players=()):
     return {"name": name, "score": score,
-            "teamtemplate": {"name": name, "shortname": short}}
+            "teamtemplate": {"name": name, "shortname": short},
+            "match2players": [{"name": p, "displayname": p, "flag": "France"} for p in players]}
 
 
 def item(match_id, begins, finished=0, **extra):
@@ -88,6 +89,14 @@ class Feed(unittest.TestCase):
         seed = cs2.match(item("seed", NOW + 60, match2opponents=[
             opponent("Group B 2<sup>nd", "Group B 2<sup>nd"), opponent("OG", "OG")]), NOW)
         self.assertEqual(seed["teams"][0], {"name": "Group B 2nd", "short": "Group B 2nd"})
+
+
+    def test_lineups_come_from_the_match(self):
+        entry = cs2.match(item("x", NOW + 60, match2opponents=[
+            opponent("Vitality", "VIT", players=["apEX", "ZywOo", ""]), opponent("OG", "OG")]), NOW)
+        self.assertEqual(entry["lineups"][0],
+                         [{"name": "apEX", "flag": "France"}, {"name": "ZywOo", "flag": "France"}])
+        self.assertEqual(entry["lineups"][1], [])
 
 
 if __name__ == "__main__":

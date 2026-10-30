@@ -96,6 +96,19 @@ def team(opponent):
     return {"name": name, "short": text(template.get("shortname") or name, 16)}
 
 
+def players(opponent):
+    """The opponent's players as Liquipedia lists them for the match: nickname and country."""
+    listed = opponent.get("match2players") if isinstance(opponent.get("match2players"), list) else []
+    out = []
+    for person in listed[:10]:
+        if not isinstance(person, dict):
+            continue
+        name = text(person.get("displayname") or person.get("name"), 32)
+        if name:
+            out.append({"name": name, "flag": text(person.get("flag"), 40) or None})
+    return out
+
+
 def game(entry):
     if not isinstance(entry, dict):
         return None
@@ -136,6 +149,7 @@ def match(item, now):
         "stage": text(item.get("section"), 40) or None,
         "tier": tier,
         "teams": [team(opponent) for opponent in opponents],
+        "lineups": [players(opponent) for opponent in opponents],
         "score": scores if state != "upcoming" and None not in scores else None,
         "winner": side(item.get("winner")) if finished else None,
         "maps": [m for m in map(game, item.get("match2games") or []) if m],
