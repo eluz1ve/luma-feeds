@@ -39,6 +39,16 @@ roster, the lineup stays PandaScore's with the people Liquipedia names as substi
 marked. Valorant's matches on their own Match: pages name no tournament, so they go without.
 Without Liquipedia the feed is built as before, just without them.
 
+- `cs2/matches.json` — Counter-Strike 2's live, upcoming (three days ahead) and latest finished
+  matches from [LiquipediaDB](https://api.liquipedia.net), built by `scripts/cs2.py`. The file:
+  `{"game", "source", "license", "updated", "matches": [...]}`. A match: `id`, `begin_at` (UTC),
+  `exact` (whether the time is confirmed), `state` (`live`, `upcoming` or `finished`), `best_of`,
+  `tournament`, `stage`, `tier` (Liquipedia's 1–5, 1 the biggest), `teams` (two of `{"name",
+  "short"}` or `null` while unknown), `score` (maps won, from the start), `winner` (0 or 1 once
+  finished) and `maps` (`{"map", "score", "winner"}` in play order; rounds when Liquipedia has
+  them). Live matches come first, then upcoming ones by start, then the ten latest results; at
+  most 80. Two LiquipediaDB requests a run, 8 an hour of its 60.
+
 ## Attribution
 
 Map names, round scores, picks, vetoes and lineups marked as Liquipedia's come from
@@ -48,10 +58,11 @@ Liquipedia. The script reads them through Liquipedia's MediaWiki API under its
 [terms of use](https://liquipedia.net/api-terms-of-use): one request every two seconds over one
 connection, gzip, an identifying User-Agent and no HTML pages, about 15–20 requests a run.
 Match lists, teams, logos, photos and the other lineups come from
-[PandaScore](https://pandascore.co).
+[PandaScore](https://pandascore.co). The Counter-Strike 2 feed comes entirely from LiquipediaDB, read with
+`LIQUIPEDIA_KEY` under the same terms (CC-BY-SA 3.0, credit Liquipedia).
 
 ## Setup
 
-The API key is never stored in this repository: the workflow reads it from the
-`PANDASCORE_KEY` repository secret (Settings › Secrets and variables › Actions). GitHub Pages must
+The API keys are never stored in this repository: the workflow reads them from the
+`PANDASCORE_KEY` and `LIQUIPEDIA_KEY` repository secrets (Settings › Secrets and variables › Actions). GitHub Pages must
 use **GitHub Actions** as its source (Settings › Pages).

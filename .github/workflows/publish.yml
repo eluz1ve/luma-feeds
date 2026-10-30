@@ -24,13 +24,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test
-        run: python3 -m unittest scripts/test_esports.py
+        run: python3 -m unittest scripts/test_esports.py scripts/test_cs2.py
       - name: Build the esports feed
         env:
           PANDASCORE_KEY: ${{ secrets.PANDASCORE_KEY }}
         run: python3 scripts/esports.py
+      - name: Build the Counter-Strike 2 feed
+        # Without it the other feeds still go out; the widget says the matches are unavailable.
+        continue-on-error: true
+        env:
+          LIQUIPEDIA_KEY: ${{ secrets.LIQUIPEDIA_KEY }}
+        run: python3 scripts/cs2.py
       - name: Index
-        run: echo '{"esports":"esports/<game>.json"}' > site/index.json
+        run: echo '{"esports":"esports/<game>.json","cs2":"cs2/matches.json"}' > site/index.json
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

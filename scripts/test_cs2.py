@@ -1,0 +1,79 @@
+"""Tests of the Counter-Strike 2 feed. Run: python3 -m unittest scripts/test_cs2.py"""
+import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.dirname(__file__))
+import cs2  # noqa: E402
+
+NOW = 1_793_400_000
+
+
+def opponent(name, short, score=-1):
+    return {"name": name, "score": score,
+            "teamtemplate": {"name": name, "shortname": short}}
+
+
+def item(match_id, begins, finished=0, **extra):
+    base = {
+        "match2id": match_id, "date": "2026-10-30 21:00:00", "dateexact": 1,
+        "finished": finished, "winner": "", "bestof": 3, "tournament": "NSTLGA Texas Open 2026",
+        "tickername": "", "section": "Group B", "liquipediatier": "4",
+        "extradata": {"timestamp": begins, "hidden": False},
+        "match2opponents": [opponent("Sutti's Money Crew", "SMC"), opponent("OG", "OG")],
+        "match2games": [{}],
+    }
+    base.update(extra)
+    return base
+
+
+class Feed(unittest.TestCase):
+    def test_states_order_and_fields(self):
+        live = item("live", NOW - 600, match2opponents=[
+            opponent("Vitality", "VIT", 1), opponent("FaZe Clan", "FaZe", 0)],
+            match2games=[{"map": "Mirage", "scores": [13, 9], "winner": "1"},
+                         {"map": "Inferno", "scores": [4, 6], "winner": ""}, {"map": "TBD"}],
+            tickername="IEM Chengdu", liquipediatier="1")
+        soon = item("soon", NOW + 3600)
+        later = item("later", NOW + 7200)
+        done = item("done", NOW - 9000, finished=1, winner="2", match2opponents=[
+            opponent("NAVI", "NAVI", 0), opponent("G2 Esports", "G2", 2)])
+        built = cs2.feed([later, live, soon], [done], NOW)
+        self.assertEqual([m["id"] for m in built["matches"]], ["live", "soon", "later", "done"])
+        first = built["matches"][0]
+        self.assertEqual(first["state"], "live")
+        self.assertEqual(first["tournament"], "IEM Chengdu")
+        self.assertEqual(first["tier"], 1)
+        self.assertEqual(first["score"], [1, 0])
+        self.assertEqual(first["teams"][1], {"name": "FaZe Clan", "short": "FaZe"})
+        self.assertEqual(first["maps"], [
+            {"map": "Mirage", "score": [13, 9], "winner": 0},
+            {"map": "Inferno", "score": [4, 6], "winner": None}])
+        self.assertEqual(built["matches"][1]["score"], None, "upcoming has no score")
+        self.assertEqual(built["matches"][3]["winner"], 1)
+        self.assertEqual(built["source"], "Liquipedia")
+
+    def test_hidden_duplicate_and_malformed_matches_are_dropped(self):
+        hidden = item("hidden", NOW + 60, extradata={"timestamp": NOW + 60, "hidden": True})
+        undated = item("undated", NOW, date="soon", extradata={})
+        solo = item("solo", NOW + 60, match2opponents=[opponent("OG", "OG")])
+        tbd = item("tbd", NOW + 60, match2opponents=[
+            {"name": "TBD", "score": -1}, opponent("OG", "OG")])
+        built = cs2.feed([hidden, undated, solo, tbd, tbd], [], NOW)
+        self.assertEqual([m["id"] for m in built["matches"]], ["tbd"])
+        self.assertEqual(built["matches"][0]["teams"][0], None)
+
+    def test_date_without_timestamp_is_utc(self):
+        entry = cs2.match(item("x", 0, extradata={}, date="2026-10-30 21:00:00"), NOW)
+        self.assertEqual(entry["begin_at"], "2026-10-30T21:00:00Z")
+
+    def test_results_are_capped_and_newest_first(self):
+        results = [item(f"r{i}", NOW - 3600 - i * 60, finished=1) for i in range(15)]
+        built = cs2.feed([], results, NOW)
+        ids = [m["id"] for m in built["matches"]]
+        self.assertEqual(len(ids), cs2.RESULT_COUNT)
+        self.assertEqual(ids[0], "r0")
+
+
+if __name__ == "__main__":
+    unittest.main()
