@@ -52,6 +52,7 @@ class Feed(unittest.TestCase):
         self.assertEqual(built["matches"][1]["score"], None, "upcoming has no score")
         self.assertEqual(built["matches"][3]["winner"], 1)
         self.assertEqual(built["source"], "Liquipedia")
+        self.assertEqual(built["updated"], NOW)
 
     def test_hidden_duplicate_and_malformed_matches_are_dropped(self):
         hidden = item("hidden", NOW + 60, extradata={"timestamp": NOW + 60, "hidden": True})
@@ -73,6 +74,20 @@ class Feed(unittest.TestCase):
         ids = [m["id"] for m in built["matches"]]
         self.assertEqual(len(ids), cs2.RESULT_COUNT)
         self.assertEqual(ids[0], "r0")
+
+
+    def test_major_events_are_kept_within_the_cap(self):
+        small = [item(f"s{i}", NOW + 60 + i, liquipediatier="4") for i in range(cs2.MAX_MATCHES)]
+        big = item("major", NOW + 5 * 24 * 3600, liquipediatier="1")
+        ids = [m["id"] for m in cs2.feed(small + [big], [], NOW)["matches"]]
+        self.assertEqual(len(ids), cs2.MAX_MATCHES)
+        self.assertEqual(ids[-1], "major", "kept, and still in start order")
+
+
+    def test_markup_is_removed_from_names(self):
+        seed = cs2.match(item("seed", NOW + 60, match2opponents=[
+            opponent("Group B 2<sup>nd", "Group B 2<sup>nd"), opponent("OG", "OG")]), NOW)
+        self.assertEqual(seed["teams"][0], {"name": "Group B 2nd", "short": "Group B 2nd"})
 
 
 if __name__ == "__main__":

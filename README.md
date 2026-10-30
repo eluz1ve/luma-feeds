@@ -41,13 +41,14 @@ Without Liquipedia the feed is built as before, just without them.
 
 - `cs2/matches.json` — Counter-Strike 2's live, upcoming (three days ahead) and latest finished
   matches from [LiquipediaDB](https://api.liquipedia.net), built by `scripts/cs2.py`. The file:
-  `{"game", "source", "license", "updated", "matches": [...]}`. A match: `id`, `begin_at` (UTC),
+  `{"game", "source", "license", "updated" (Unix seconds), "matches": [...]}`. A match: `id`, `begin_at` (UTC),
   `exact` (whether the time is confirmed), `state` (`live`, `upcoming` or `finished`), `best_of`,
   `tournament`, `stage`, `tier` (Liquipedia's 1–5, 1 the biggest), `teams` (two of `{"name",
   "short"}` or `null` while unknown), `score` (maps won, from the start), `winner` (0 or 1 once
   finished) and `maps` (`{"map", "score", "winner"}` in play order; rounds when Liquipedia has
   them). Live matches come first, then upcoming ones by start, then the ten latest results; at
-  most 80. Two LiquipediaDB requests a run, 8 an hour of its 60.
+  most 80, keeping Liquipedia's tier 1 and 2 matches (listed a week ahead) before smaller ones.
+  Three LiquipediaDB requests a run, 12 an hour of its 60.
 
 ## Attribution
 

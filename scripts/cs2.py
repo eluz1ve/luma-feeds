@@ -1,14 +1,15 @@
 """Builds Luma's Counter-Strike 2 feed from LiquipediaDB: live, upcoming and just-finished matches.
 
 Reads LIQUIPEDIA_KEY from the environment and writes site/cs2/matches.json. The key stays in the
-repository's secrets; devices only read the published file. Two requests a run, one run every 15
-minutes: 8 of LiquipediaDB's 60 requests an hour. Liquipedia's data is CC-BY-SA 3.0, so apps
+repository's secrets; devices only read the published file. Three requests a run, one run every
+15 minutes: 12 of LiquipediaDB's 60 requests an hour. Liquipedia's data is CC-BY-SA 3.0, so apps
 showing the feed credit Liquipedia.
 """
 import calendar
 import gzip
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -21,6 +22,9 @@ USER_AGENT = "luma-feeds/1.0 (https://github.com/eluz1ve/luma-feeds)"
 # Open matches from this long ago may still be running; later ones are listed as upcoming.
 LIVE_WINDOW = 8 * 3600
 AHEAD = 3 * 24 * 3600
+# The biggest events (Liquipedia's tiers 1 and 2) are listed a week ahead and always kept.
+MAJOR_AHEAD = 7 * 24 * 3600
+MAJOR_TIER = 2
 # Matches that started this long ago and finished are listed as results, the latest few.
 RESULTS = 6 * 3600
 RESULT_COUNT = 10
@@ -67,8 +71,12 @@ def start(match):
         return None
 
 
+TAGS = re.compile(r"<[^>]*>")
+
+
 def text(value, limit=80):
-    return " ".join(str(value or "").split())[:limit]
+    """Plain text: Liquipedia's markup such as "2<sup>nd</sup>" removed, whitespace collapsed."""
+    return " ".join(TAGS.sub("", str(value or "")).split())[:limit]
 
 
 def score(value):
@@ -134,8 +142,13 @@ def match(item, now):
     }
 
 
+def major(entry):
+    return entry["tier"] is not None and entry["tier"] <= MAJOR_TIER
+
+
 def feed(open_matches, results, now):
-    """Live matches, then upcoming ones by start, then the latest results; duplicates dropped."""
+    """Live matches, then upcoming ones by start, then the latest results; duplicates dropped.
+    Within the cap, the biggest events come before smaller ones."""
     seen, entries = set(), []
     for item in list(open_matches) + list(results):
         entry = match(item, now)
@@ -143,15 +156,20 @@ def feed(open_matches, results, now):
             seen.add(entry["id"])
             entries.append(entry)
     by_start = sorted(entries, key=lambda m: m["begin_at"])
-    live = [m for m in by_start if m["state"] == "live"]
-    upcoming = [m for m in by_start if m["state"] == "upcoming"]
     finished = [m for m in reversed(by_start) if m["state"] == "finished"][:RESULT_COUNT]
+    open_ = [m for m in by_start if m["state"] != "finished"]
+    room = MAX_MATCHES - len(finished)
+    kept = [m for m in open_ if major(m)][:room]
+    kept += [m for m in open_ if not major(m)][:room - len(kept)]
+    kept_ids = {m["id"] for m in kept}
+    live = [m for m in open_ if m["state"] == "live" and m["id"] in kept_ids]
+    upcoming = [m for m in open_ if m["state"] == "upcoming" and m["id"] in kept_ids]
     return {
         "game": "cs2",
         "source": "Liquipedia",
         "license": "CC-BY-SA 3.0",
-        "updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
-        "matches": (live + upcoming)[:MAX_MATCHES - len(finished)] + finished,
+        "updated": now,
+        "matches": live + upcoming + finished,
     }
 
 
@@ -166,13 +184,19 @@ def main():
             f"[[finished::0]] AND [[date::>{stamp(now - LIVE_WINDOW)}]] "
             f"AND [[date::<{stamp(now + AHEAD)}]]",
             "date ASC", 200)
+        majors = get(
+            key,
+            f"[[finished::0]] AND [[date::>{stamp(now - LIVE_WINDOW)}]] "
+            f"AND [[date::<{stamp(now + MAJOR_AHEAD)}]] "
+            f"AND ([[liquipediatier::1]] OR [[liquipediatier::2]])",
+            "date ASC", 100)
         results = get(
             key,
             f"[[finished::1]] AND [[date::>{stamp(now - RESULTS)}]]",
             "date DESC", 40)
     except (urllib.error.URLError, ValueError, OSError) as error:
         sys.exit(f"cs2: {error}")
-    built = feed(open_matches, results, now)
+    built = feed(open_matches + majors, results, now)
     out = os.path.join(os.path.dirname(__file__), "..", "site", "cs2")
     os.makedirs(out, exist_ok=True)
     with open(os.path.join(out, "matches.json"), "w", encoding="utf8") as file:
