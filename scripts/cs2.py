@@ -2,7 +2,7 @@
 
 Reads LIQUIPEDIA_KEY from the environment and writes site/cs2/matches.json. The key stays in the
 repository's secrets; devices only read the published file. Three requests a run, one run every
-15 minutes: 12 of LiquipediaDB's 60 requests an hour. Liquipedia's data is CC-BY-SA 3.0, so apps
+5 minutes: 36 of LiquipediaDB's 60 requests an hour. Liquipedia's data is CC-BY-SA 3.0, so apps
 showing the feed credit Liquipedia.
 """
 import calendar

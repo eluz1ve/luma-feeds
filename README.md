@@ -1,7 +1,7 @@
 # luma-feeds
 
 Test data feeds for the [Luma](https://github.com/eluz1ve/lg-luma) TV launcher, published to
-GitHub Pages every 15 minutes by `.github/workflows/publish.yml`.
+GitHub Pages every 5 minutes by `.github/workflows/publish.yml`.
 
 > [!IMPORTANT]
 > These feeds are provided **for testing only**. For personal use, sign up at
@@ -49,7 +49,7 @@ Without Liquipedia the feed is built as before, just without them.
   finished) and `maps` (`{"map", "score", "winner"}` in play order; rounds when Liquipedia has
   them). Live matches come first, then upcoming ones by start, then the ten latest results; at
   most 80, keeping Liquipedia's tier 1 and 2 matches (listed a week ahead) before smaller ones.
-  Three LiquipediaDB requests a run, 12 an hour of its 60.
+  Three LiquipediaDB requests a run, 36 an hour of its 60.
 
 ## Attribution
 

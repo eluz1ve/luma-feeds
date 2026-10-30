@@ -2,8 +2,8 @@ name: Publish feeds
 
 on:
   schedule:
-    # Every 15 minutes; GitHub may start scheduled runs a little late.
-    - cron: '*/15 * * * *'
+    # Every 5 minutes, GitHub's shortest schedule; runs may start a few minutes late.
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
