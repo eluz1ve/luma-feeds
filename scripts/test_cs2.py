@@ -46,7 +46,7 @@ class Feed(unittest.TestCase):
         self.assertEqual(first["tournament"], "IEM Chengdu")
         self.assertEqual(first["tier"], 1)
         self.assertEqual(first["score"], [1, 0])
-        self.assertEqual(first["teams"][1], {"name": "FaZe Clan", "short": "FaZe"})
+        self.assertEqual(first["teams"][1], {"name": "FaZe Clan", "short": "FaZe", "image": None})
         self.assertEqual(first["maps"], [
             {"map": "Mirage", "score": [13, 9], "winner": 0},
             {"map": "Inferno", "score": [4, 6], "winner": None}])
@@ -88,7 +88,7 @@ class Feed(unittest.TestCase):
     def test_markup_is_removed_from_names(self):
         seed = cs2.match(item("seed", NOW + 60, match2opponents=[
             opponent("Group B 2<sup>nd", "Group B 2<sup>nd"), opponent("OG", "OG")]), NOW)
-        self.assertEqual(seed["teams"][0], {"name": "Group B 2nd", "short": "Group B 2nd"})
+        self.assertEqual(seed["teams"][0], {"name": "Group B 2nd", "short": "Group B 2nd", "image": None})
 
 
     def test_lineups_come_from_the_match(self):
@@ -97,6 +97,23 @@ class Feed(unittest.TestCase):
         self.assertEqual(entry["lineups"][0],
                          [{"name": "apEX", "flag": "France"}, {"name": "ZywOo", "flag": "France"}])
         self.assertEqual(entry["lineups"][1], [])
+
+
+    def test_logos_prefer_dark_and_skip_placeholders(self):
+        base = "https://liquipedia.net/commons/images/thumb/a/ab/"
+        real = {"name": "Vitality", "teamtemplate": {
+            "name": "Team Vitality", "shortname": "VIT",
+            "image": "Vitality lightmode.png", "imageurl": base + "light.png",
+            "imagedark": "Vitality darkmode.png", "imagedarkurl": base + "dark.png"}}
+        placeholder = {"name": "YHTR", "teamtemplate": {
+            "name": "YHTR", "imagedark": "Counter-Strike 2 default darkmode.png",
+            "imagedarkurl": base + "default.png", "image": "Counter-Strike 2 default lightmode.png",
+            "imageurl": base + "default-light.png"}}
+        elsewhere = {"name": "X", "teamtemplate": {"name": "X", "imagedark": "x.png",
+                                                    "imagedarkurl": "https://example.com/x.png"}}
+        self.assertEqual(cs2.team(real)["image"], base + "dark.png")
+        self.assertIsNone(cs2.team(placeholder)["image"])
+        self.assertIsNone(cs2.team(elsewhere)["image"])
 
 
 if __name__ == "__main__":

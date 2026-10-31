@@ -47,7 +47,8 @@ Without Liquipedia the feed is built as before, just without them.
   `{"game", "source", "license", "updated" (Unix seconds), "matches": [...]}`. A match: `id`, `begin_at` (UTC),
   `exact` (whether the time is confirmed), `state` (`live`, `upcoming` or `finished`), `best_of`,
   `tournament`, `stage`, `tier` (Liquipedia's 1–5, 1 the biggest), `teams` (two of `{"name",
-  "short"}` or `null` while unknown), `lineups` (two lists of `{"name", "flag"}`, the players
+  "short", "image"}` or `null` while unknown; `image` is the team's logo on Liquipedia's
+  commons, for dark backgrounds, or `null`), `lineups` (two lists of `{"name", "flag"}`, the players
   Liquipedia lists for the match, possibly empty), `score` (maps won, from the start), `winner` (0 or 1 once
   finished) and `maps` (`{"map", "score", "winner"}` in play order; rounds when Liquipedia has
   them). Live matches come first, then upcoming ones by start, then the ten latest results; at

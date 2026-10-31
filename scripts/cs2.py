@@ -88,12 +88,25 @@ def side(value):
     return {"1": 0, "2": 1}.get(str(value).strip())
 
 
+LOGOS = "https://liquipedia.net/commons/images/"
+
+
+def logo(template):
+    """The team's logo for dark backgrounds, else its light one; not Liquipedia's placeholders."""
+    for key in ("imagedarkurl", "imageurl"):
+        url = template.get(key)
+        file = str(template.get(key.replace("url", "")) or "").lower()
+        if isinstance(url, str) and url.startswith(LOGOS) and len(url) <= 300 and "default" not in file:
+            return url
+    return None
+
+
 def team(opponent):
     template = opponent.get("teamtemplate") if isinstance(opponent.get("teamtemplate"), dict) else {}
     name = text(template.get("name") or opponent.get("name"))
     if not name or name.lower() in ("tbd", "definitions"):
         return None
-    return {"name": name, "short": text(template.get("shortname") or name, 16)}
+    return {"name": name, "short": text(template.get("shortname") or name, 16), "image": logo(template)}
 
 
 def players(opponent):
