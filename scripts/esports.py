@@ -37,10 +37,8 @@ WIKIS = {"csgo": "counterstrike", "valorant": "valorant", "r6siege": "rainbowsix
 # How many players a team starts a game with on each wiki.
 STARTING = {"counterstrike": 5, "valorant": 5, "rainbowsix": 5, "overwatch": 5,
             "rocketleague": 3, "callofduty": 4}
-# Upcoming matches this close to their start may already have their maps picked, and are worth
-# checking against Liquipedia's roster so a stale PandaScore lineup gets corrected before the
-# match airs rather than only once it's running.
-SOON = 6 * 3600
+# Upcoming matches this close to their start may already have their maps picked.
+SOON = 3600
 # Hours from UTC of the zones Liquipedia writes after match times, e.g. {{Abbr/CEST}}.
 ZONES = {"utc": 0, "gmt": 0, "wet": 0, "bst": 1, "west": 1, "cet": 1, "cest": 2, "eet": 2,
          "sast": 2, "eest": 3, "msk": 3, "trt": 3, "ast": 3, "eat": 3, "gst": 4, "pkt": 5,
