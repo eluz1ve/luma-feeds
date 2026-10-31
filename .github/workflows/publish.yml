@@ -3,7 +3,7 @@ name: Publish feeds
 on:
   schedule:
     # A fallback: GitHub runs schedules hours apart under load. The `next` job below starts
-    # the following run itself, five minutes after this one began.
+    # the following run itself, two minutes after this one began.
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
@@ -26,7 +26,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test
         run: python3 -m unittest scripts/test_esports.py scripts/test_cs2.py
+      - name: Full or live run
+        id: mode
+        # Every 10 minutes a full run rebuilds everything; the runs in between refresh only the
+        # Counter-Strike 2 feed's started matches and carry the rest over (scripts/mode.py).
+        run: python3 scripts/mode.py
+      - name: Carry over the esports feed
+        if: steps.mode.outputs.full != 'true'
+        run: python3 scripts/carry.py
       - name: Build the esports feed
+        if: steps.mode.outputs.full == 'true'
         env:
           PANDASCORE_KEY: ${{ secrets.PANDASCORE_KEY }}
         run: python3 scripts/esports.py
@@ -35,16 +44,19 @@ jobs:
         continue-on-error: true
         env:
           LIQUIPEDIA_KEY: ${{ secrets.LIQUIPEDIA_KEY }}
+          FEEDS_FULL: ${{ steps.mode.outputs.full }}
         run: python3 scripts/cs2.py
       - name: Index
-        run: echo '{"esports":"esports/<game>.json","cs2":"cs2/matches.json"}' > site/index.json
+        run: >-
+          echo '{"esports":"esports/<game>.json","cs2":"cs2/matches.json",'
+          '"full_at":${{ steps.mode.outputs.full_at }}}' | tr -d ' ' > site/index.json
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
       - id: deployment
         uses: actions/deploy-pages@v4
 
-  # Keeps the feeds five minutes apart: waits until five minutes after this run started, then
+  # Keeps the runs two minutes apart: waits until two minutes after this run started, then
   # dispatches the next run (a workflow_dispatch from GITHUB_TOKEN does start runs). Runs even
   # if publishing failed. Starts nothing if a run is already waiting, so a scheduled run and the
   # chain never double up. The repository variable FEEDS_CHAIN=off stops the chain.
@@ -60,10 +72,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - name: Wait until five minutes after this run started
+      - name: Wait until two minutes after this run started
         run: |
           started=$(gh run view "${{ github.run_id }}" --json createdAt -q .createdAt)
-          wait=$(( 300 - ($(date -u +%s) - $(date -u -d "$started" +%s)) ))
+          wait=$(( 120 - ($(date -u +%s) - $(date -u -d "$started" +%s)) ))
           if [ "$wait" -gt 0 ]; then sleep "$wait"; fi
       - name: Start the next run
         run: |

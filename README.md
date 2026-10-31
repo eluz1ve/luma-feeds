@@ -1,9 +1,11 @@
 # luma-feeds
 
 Test data feeds for the [Luma](https://github.com/eluz1ve/lg-luma) TV launcher, published to
-GitHub Pages every 5 minutes by `.github/workflows/publish.yml`. GitHub runs schedules hours
-apart under load, so each run starts the next itself, five minutes after it began; the schedule
-only restarts that chain if it ever breaks. Set the repository variable `FEEDS_CHAIN` to `off`
+GitHub Pages every 2 minutes by `.github/workflows/publish.yml`. GitHub runs schedules hours
+apart under load, so each run starts the next itself, two minutes after it began; the schedule
+only restarts that chain if it ever breaks. Every 10 minutes a run rebuilds every feed; the runs
+in between refresh only the Counter-Strike 2 feed's started matches and carry the rest over
+(`scripts/mode.py`, `scripts/carry.py`). Set the repository variable `FEEDS_CHAIN` to `off`
 (Settings › Secrets and variables › Actions › Variables) to stop it.
 
 > [!IMPORTANT]
@@ -53,7 +55,8 @@ Without Liquipedia the feed is built as before, just without them.
   finished) and `maps` (`{"map", "score", "winner"}` in play order; rounds when Liquipedia has
   them). Live matches come first, then upcoming ones by start, then the ten latest results; at
   most 80, keeping Liquipedia's tier 1 and 2 matches (listed a week ahead) before smaller ones.
-  Three LiquipediaDB requests a run, 36 an hour of its 60.
+  A full run makes three LiquipediaDB requests and a live run one: 42 an hour of its 60.
+  `full_at` is when the last full run was.
 
 ## Attribution
 

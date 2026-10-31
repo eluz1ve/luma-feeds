@@ -5,6 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
 import cs2  # noqa: E402
+import mode  # noqa: E402
 
 NOW = 1_793_400_000
 
@@ -114,6 +115,29 @@ class Feed(unittest.TestCase):
         self.assertEqual(cs2.team(real)["image"], base + "dark.png")
         self.assertIsNone(cs2.team(placeholder)["image"])
         self.assertIsNone(cs2.team(elsewhere)["image"])
+
+
+    def test_a_live_run_refreshes_started_matches_and_keeps_the_rest(self):
+        previous = cs2.feed([item("live", NOW - 600), item("ahead", NOW + 3600),
+                             item("started", NOW - 120 + 0, )],
+                            [item("old", NOW - 9000, finished=1, winner="1")], NOW - 120)
+        previous["full_at"] = NOW - 300
+        # "started" was upcoming a run ago; "live" has just finished.
+        started = [item("live", NOW - 600, finished=1, winner="2", match2opponents=[
+                       opponent("NAVI", "NAVI", 0), opponent("G2", "G2", 2)]),
+                   item("started", NOW - 60)]
+        built = cs2.refresh(previous, started, NOW)
+        states = {m["id"]: m["state"] for m in built["matches"]}
+        self.assertEqual(states, {"started": "live", "ahead": "upcoming",
+                                  "live": "finished", "old": "finished"})
+        self.assertEqual(built["full_at"], NOW - 300, "a live run keeps the full run's time")
+        self.assertEqual(built["updated"], NOW)
+
+    def test_full_runs_come_every_ten_minutes(self):
+        self.assertEqual(mode.due(None, NOW), (True, NOW))
+        self.assertEqual(mode.due({"full_at": NOW - 120}, NOW), (False, NOW - 120))
+        self.assertEqual(mode.due({"full_at": NOW - 560}, NOW), (True, NOW))
+        self.assertEqual(mode.due({"full_at": "x"}, NOW), (True, NOW))
 
 
 if __name__ == "__main__":

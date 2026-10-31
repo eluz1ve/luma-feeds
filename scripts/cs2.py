@@ -1,8 +1,10 @@
 """Builds Luma's Counter-Strike 2 feed from LiquipediaDB: live, upcoming and just-finished matches.
 
 Reads LIQUIPEDIA_KEY from the environment and writes site/cs2/matches.json. The key stays in the
-repository's secrets; devices only read the published file. Three requests a run, one run every
-5 minutes: 36 of LiquipediaDB's 60 requests an hour. Liquipedia's data is CC-BY-SA 3.0, so apps
+repository's secrets; devices only read the published file. Runs come every 2 minutes: a full run
+(three requests: the schedule, the biggest events and results) every 10 minutes, and between them
+a live run (one request: what started in the last hours) that keeps the rest of the last
+published feed. 6 × 3 + 24 × 1 = 42 of LiquipediaDB's 60 requests an hour. Liquipedia's data is CC-BY-SA 3.0, so apps
 showing the feed credit Liquipedia.
 """
 import calendar
@@ -173,16 +175,15 @@ def major(entry):
     return entry["tier"] is not None and entry["tier"] <= MAJOR_TIER
 
 
-def feed(open_matches, results, now):
+def assemble(entries, now, full_at):
     """Live matches, then upcoming ones by start, then the latest results; duplicates dropped.
     Within the cap, the biggest events come before smaller ones."""
-    seen, entries = set(), []
-    for item in list(open_matches) + list(results):
-        entry = match(item, now)
+    seen, unique = set(), []
+    for entry in entries:
         if entry and entry["id"] not in seen:
             seen.add(entry["id"])
-            entries.append(entry)
-    by_start = sorted(entries, key=lambda m: m["begin_at"])
+            unique.append(entry)
+    by_start = sorted(unique, key=lambda m: m["begin_at"])
     finished = [m for m in reversed(by_start) if m["state"] == "finished"][:RESULT_COUNT]
     open_ = [m for m in by_start if m["state"] != "finished"]
     room = MAX_MATCHES - len(finished)
@@ -196,8 +197,47 @@ def feed(open_matches, results, now):
         "source": "Liquipedia",
         "license": "CC-BY-SA 3.0",
         "updated": now,
+        "full_at": full_at,
         "matches": live + upcoming + finished,
     }
+
+
+def feed(open_matches, results, now):
+    """A full run's feed from the schedule and the results."""
+    return assemble([match(item, now) for item in list(open_matches) + list(results)], now, now)
+
+
+def refresh(previous, started, now):
+    """A live run's feed: what started in the last hours, fresh from LiquipediaDB, with the last
+    published feed's upcoming matches that still lie ahead and its results."""
+    fresh = [entry for entry in (match(item, now) for item in started) if entry]
+    ids = {entry["id"] for entry in fresh}
+    kept = []
+    for entry in previous.get("matches", []):
+        if not isinstance(entry, dict) or entry.get("id") in ids:
+            continue
+        begins = entry.get("begin_at", "")
+        if entry.get("state") == "upcoming" and begins > time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)):
+            kept.append(entry)
+        elif entry.get("state") == "finished":
+            kept.append(entry)
+    return assemble(fresh + kept, now, previous.get("full_at") or now)
+
+
+FEED_URL = "https://eluz1ve.github.io/luma-feeds/cs2/matches.json"
+
+
+def published():
+    """The feed as last published, or None."""
+    request = urllib.request.Request(FEED_URL + f"?t={int(time.time())}",
+                                     headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            value = json.load(response)
+        return value if isinstance(value.get("matches"), list) else None
+    except (urllib.error.URLError, ValueError, OSError):
+        return None
 
 
 def main():
@@ -205,6 +245,17 @@ def main():
     if not key:
         sys.exit("LIQUIPEDIA_KEY is not set")
     now = int(time.time())
+    previous = None if os.environ.get("FEEDS_FULL") == "true" else published()
+    if previous is not None:
+        try:
+            started = get(
+                key,
+                f"[[date::>{stamp(now - LIVE_WINDOW)}]] AND [[date::<{stamp(now)}]]",
+                "date ASC", 200)
+        except (urllib.error.URLError, ValueError, OSError) as error:
+            sys.exit(f"cs2: {error}")
+        write(refresh(previous, started, now), "live")
+        return
     try:
         open_matches = get(
             key,
@@ -223,13 +274,16 @@ def main():
             "date DESC", 40)
     except (urllib.error.URLError, ValueError, OSError) as error:
         sys.exit(f"cs2: {error}")
-    built = feed(open_matches + majors, results, now)
+    write(feed(open_matches + majors, results, now), "full")
+
+
+def write(built, mode):
     out = os.path.join(os.path.dirname(__file__), "..", "site", "cs2")
     os.makedirs(out, exist_ok=True)
     with open(os.path.join(out, "matches.json"), "w", encoding="utf8") as file:
         json.dump(built, file, ensure_ascii=False, separators=(",", ":"))
     states = [m["state"] for m in built["matches"]]
-    print(f"cs2: {states.count('live')} live, {states.count('upcoming')} upcoming, "
+    print(f"cs2 ({mode}): {states.count('live')} live, {states.count('upcoming')} upcoming, "
           f"{states.count('finished')} finished")
 
 
