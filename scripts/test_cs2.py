@@ -12,7 +12,7 @@ NOW = 1_793_400_000
 
 def opponent(name, short, score=-1, players=()):
     return {"name": name, "score": score,
-            "teamtemplate": {"name": name, "shortname": short},
+            "teamtemplate": {"name": name, "shortname": short, "page": name},
             "match2players": [{"name": p, "displayname": p, "flag": "France"} for p in players]}
 
 
@@ -47,8 +47,9 @@ class Feed(unittest.TestCase):
         self.assertEqual(first["tournament"], "IEM Chengdu")
         self.assertEqual(first["tier"], 1)
         self.assertEqual(first["score"], [1, 0])
-        self.assertEqual(first["teams"][1], {"name": "FaZe Clan", "short": "FaZe", "image": None})
-        self.assertEqual(first["maps"], [
+        self.assertEqual(first["teams"][1], {"name": "FaZe Clan", "short": "FaZe", "image": None,
+                                             "page": "FaZe_Clan"})
+        self.assertEqual([{k: v for k, v in m.items() if k != "image"} for m in first["maps"]], [
             {"map": "Mirage", "score": [13, 9], "winner": 0},
             {"map": "Inferno", "score": [4, 6], "winner": None}])
         self.assertEqual(built["matches"][1]["score"], None, "upcoming has no score")
@@ -89,7 +90,8 @@ class Feed(unittest.TestCase):
     def test_markup_is_removed_from_names(self):
         seed = cs2.match(item("seed", NOW + 60, match2opponents=[
             opponent("Group B 2<sup>nd", "Group B 2<sup>nd"), opponent("OG", "OG")]), NOW)
-        self.assertEqual(seed["teams"][0], {"name": "Group B 2nd", "short": "Group B 2nd", "image": None})
+        self.assertEqual(seed["teams"][0], {"name": "Group B 2nd", "short": "Group B 2nd", "image": None,
+                                             "page": "Group_B_2nd"})
 
 
     def test_lineups_come_from_the_match(self):
@@ -146,6 +148,32 @@ class Feed(unittest.TestCase):
                                icondark="PGL darkmode.png", icondarkurl=base + "dark.png"), NOW)
         self.assertEqual(entry["icon"], base + "dark.png")
         self.assertIsNone(cs2.match(item("y", NOW + 60), NOW)["icon"])
+
+
+    def test_rounds_read_liquipedias_bracket_headers(self):
+        def named(match_id="R01-M001", **data):
+            return cs2.round_name({"match2id": match_id, "match2bracketdata": data})
+        self.assertEqual(named(header="!r3!1", bracketsection="upper"),
+                         {"key": "final", "bracket": "upper"})
+        self.assertEqual(named(inheritedheader="!r2!2"), {"key": "semifinals"})
+        self.assertEqual(named(header="!r1!4"), {"key": "round_of", "number": 16})
+        self.assertEqual(named(header="!gf", bracketsection="upper"), {"key": "grand_final"})
+        self.assertEqual(named("RxMTP", header="!r3!1"), {"key": "third_place"})
+        self.assertEqual(named(header="Winners Match"), {"text": "Winners Match"})
+        self.assertIsNone(named())
+
+    def test_coaches_come_first_by_team(self):
+        staff = cs2.coaches([
+            {"id": "KrizzeN", "role": "Assistant Coach", "pagename": "FURIA"},
+            {"id": "sidde", "role": "Head Coach", "pagename": "FURIA"},
+            {"id": "Alexia", "role": "Manager", "pagename": "FURIA"},
+        ])
+        self.assertEqual(staff, {"FURIA": [{"name": "sidde", "role": "Head Coach"},
+                                           {"name": "KrizzeN", "role": "Assistant Coach"}]})
+
+    def test_maps_carry_their_picture(self):
+        self.assertTrue(cs2.game({"map": "Nuke"})["image"].startswith(cs2.LOGOS))
+        self.assertIsNone(cs2.game({"map": "Unknown Map"})["image"])
 
 
 if __name__ == "__main__":
