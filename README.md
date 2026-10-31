@@ -49,15 +49,19 @@ Without Liquipedia the feed is built as before, just without them.
   `{"game", "source", "license", "updated" (Unix seconds), "matches": [...]}`. A match: `id`, `begin_at` (UTC),
   `exact` (whether the time is confirmed), `state` (`live`, `upcoming` or `finished`), `best_of`,
   `tournament`, `icon` (the tournament's logo on Liquipedia's commons, for dark backgrounds, or
-  `null`), `stage`, `tier` (Liquipedia's 1–5, 1 the biggest), `teams` (two of `{"name",
+  `null`), `stage`, `round` (`{"key"}` one of `grand_final`, `final`, `semifinals`, `quarterfinals`,
+  `third_place`, or `round_of` with `number`, plus `bracket` `upper`/`lower`; else `{"text"}` as
+  Liquipedia writes it; or `null`), `tier` (Liquipedia's 1–5, 1 the biggest), `teams` (two of `{"name",
   "short", "image"}` or `null` while unknown; `image` is the team's logo on Liquipedia's
   commons, for dark backgrounds, or `null`), `lineups` (two lists of `{"name", "flag"}`, the players
   Liquipedia lists for the match, possibly empty), `score` (maps won, from the start), `winner` (0 or 1 once
-  finished) and `maps` (`{"map", "score", "winner"}` in play order; rounds when Liquipedia has
+  finished) and `maps` (`{"map", "image", "score", "winner"}` in play order, `image` a
+  screenshot of the map from Liquipedia's commons; rounds when Liquipedia has
   them). Live matches come first, then upcoming ones by start, then the ten latest results; at
   most 80, keeping Liquipedia's tier 1 and 2 matches (listed a week ahead) before smaller ones.
   A full run makes three LiquipediaDB requests and a live run one: 42 an hour of its 60.
-  `full_at` is when the last full run was.
+  `full_at` is when the last full run was. `staff` maps a team's `page` to its coaches
+  (`{"name", "role"}`, head coaches first), asked for on full runs.
 
 ## Attribution
 
