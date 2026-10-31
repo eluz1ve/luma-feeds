@@ -33,7 +33,8 @@ RESULT_COUNT = 10
 MAX_MATCHES = 80
 FIELDS = ",".join([
     "match2id", "date", "dateexact", "finished", "winner", "bestof", "tournament", "tickername",
-    "section", "liquipediatier", "extradata", "match2opponents", "match2games",
+    "section", "liquipediatier", "extradata", "match2opponents", "match2games", "icon", "iconurl",
+    "icondark", "icondarkurl",
 ])
 
 
@@ -161,6 +162,8 @@ def match(item, now):
         "state": state,
         "best_of": best_of if isinstance(best_of, int) and best_of > 0 else None,
         "tournament": text(item.get("tickername") or item.get("tournament")),
+        "icon": logo({key.replace("icon", "image"): value for key, value in item.items()
+                      if key.startswith("icon")}),
         "stage": text(item.get("section"), 40) or None,
         "tier": tier,
         "teams": [team(opponent) for opponent in opponents],

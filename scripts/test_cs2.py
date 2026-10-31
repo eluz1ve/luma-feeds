@@ -140,5 +140,13 @@ class Feed(unittest.TestCase):
         self.assertEqual(mode.due({"full_at": "x"}, NOW), (True, NOW))
 
 
+    def test_tournament_icons_prefer_dark(self):
+        base = "https://liquipedia.net/commons/images/thumb/c/cc/"
+        entry = cs2.match(item("x", NOW + 60, icon="PGL lightmode.png", iconurl=base + "light.png",
+                               icondark="PGL darkmode.png", icondarkurl=base + "dark.png"), NOW)
+        self.assertEqual(entry["icon"], base + "dark.png")
+        self.assertIsNone(cs2.match(item("y", NOW + 60), NOW)["icon"])
+
+
 if __name__ == "__main__":
     unittest.main()

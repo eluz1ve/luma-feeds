@@ -48,7 +48,8 @@ Without Liquipedia the feed is built as before, just without them.
   matches from [LiquipediaDB](https://api.liquipedia.net), built by `scripts/cs2.py`. The file:
   `{"game", "source", "license", "updated" (Unix seconds), "matches": [...]}`. A match: `id`, `begin_at` (UTC),
   `exact` (whether the time is confirmed), `state` (`live`, `upcoming` or `finished`), `best_of`,
-  `tournament`, `stage`, `tier` (Liquipedia's 1–5, 1 the biggest), `teams` (two of `{"name",
+  `tournament`, `icon` (the tournament's logo on Liquipedia's commons, for dark backgrounds, or
+  `null`), `stage`, `tier` (Liquipedia's 1–5, 1 the biggest), `teams` (two of `{"name",
   "short", "image"}` or `null` while unknown; `image` is the team's logo on Liquipedia's
   commons, for dark backgrounds, or `null`), `lineups` (two lists of `{"name", "flag"}`, the players
   Liquipedia lists for the match, possibly empty), `score` (maps won, from the start), `winner` (0 or 1 once
