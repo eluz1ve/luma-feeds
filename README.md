@@ -1,7 +1,10 @@
 # luma-feeds
 
 Test data feeds for the [Luma](https://github.com/eluz1ve/lg-luma) TV launcher, published to
-GitHub Pages every 5 minutes by `.github/workflows/publish.yml`.
+GitHub Pages every 5 minutes by `.github/workflows/publish.yml`. GitHub runs schedules hours
+apart under load, so each run starts the next itself, five minutes after it began; the schedule
+only restarts that chain if it ever breaks. Set the repository variable `FEEDS_CHAIN` to `off`
+(Settings › Secrets and variables › Actions › Variables) to stop it.
 
 > [!IMPORTANT]
 > These feeds are provided **for testing only**. For personal use, sign up at

@@ -2,7 +2,8 @@ name: Publish feeds
 
 on:
   schedule:
-    # Every 5 minutes, GitHub's shortest schedule; runs may start a few minutes late.
+    # A fallback: GitHub runs schedules hours apart under load. The `next` job below starts
+    # the following run itself, five minutes after this one began.
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
@@ -42,3 +43,34 @@ jobs:
           path: site
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # Keeps the feeds five minutes apart: waits until five minutes after this run started, then
+  # dispatches the next run (a workflow_dispatch from GITHUB_TOKEN does start runs). Runs even
+  # if publishing failed. Starts nothing if a run is already waiting, so a scheduled run and the
+  # chain never double up. The repository variable FEEDS_CHAIN=off stops the chain.
+  next:
+    needs: publish
+    if: always() && vars.FEEDS_CHAIN != 'off'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Wait until five minutes after this run started
+        run: |
+          started=$(gh run view "${{ github.run_id }}" --json createdAt -q .createdAt)
+          wait=$(( 300 - ($(date -u +%s) - $(date -u -d "$started" +%s)) ))
+          if [ "$wait" -gt 0 ]; then sleep "$wait"; fi
+      - name: Start the next run
+        run: |
+          waiting=$(gh run list --workflow publish.yml --limit 20 --json status \
+            -q '[.[] | select(.status == "queued" or .status == "pending" or .status == "waiting" or .status == "requested")] | length')
+          if [ "$waiting" -gt 0 ]; then
+            echo "A run is already waiting; it continues the chain."
+          else
+            gh workflow run publish.yml --ref "${{ github.ref_name }}"
+          fi
