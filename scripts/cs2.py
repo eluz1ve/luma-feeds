@@ -1,11 +1,13 @@
 """Builds Luma's Counter-Strike 2 feed from LiquipediaDB: live, upcoming and just-finished matches.
 
 Reads LIQUIPEDIA_KEY from the environment and writes site/cs2/matches.json. The key stays in the
-repository's secrets; devices only read the published file. Runs come every 2 minutes: a full run
-(four requests: the schedule, the biggest events, results and the teams' coaches) every 10
-minutes, and between them a live run (one request: what started in the last hours) that keeps the
-rest of the last published feed. 6 × 4 + 24 × 1 = 48 of LiquipediaDB's 60 requests an hour. Liquipedia's data is CC-BY-SA 3.0, so apps
-showing the feed credit Liquipedia.
+repository's secrets; devices only read the published file. Runs come every 3 minutes: a full run
+(three requests to the match table: the schedule, the biggest events and results, and one for the
+teams' coaches) every 15 minutes, and between them a live run (one request: what started in the
+last hours) that keeps the rest of the last published feed: 4 × 3 + 16 × 1 = 28 match requests
+an hour. When LiquipediaDB answers 429 (the key's limit is used up), runs keep the last published
+feed and make no request for `COOLDOWN`, as further requests would keep the limit exhausted.
+Liquipedia's data is CC-BY-SA 3.0, so apps showing the feed credit Liquipedia.
 """
 import calendar
 import gzip
@@ -51,6 +53,8 @@ MAJOR_TIER = 2
 RESULTS = 6 * 3600
 RESULT_COUNT = 10
 MAX_MATCHES = 80
+# After a 429, runs wait this long before asking LiquipediaDB again.
+COOLDOWN = 3600
 FIELDS = ",".join([
     "match2id", "date", "dateexact", "finished", "winner", "bestof", "tournament", "tickername",
     "section", "liquipediatier", "extradata", "match2opponents", "match2games", "icon", "iconurl",
@@ -326,15 +330,18 @@ def main():
     if not key:
         sys.exit("LIQUIPEDIA_KEY is not set")
     now = int(time.time())
-    previous = None if os.environ.get("FEEDS_FULL") == "true" else published()
-    if previous is not None:
+    previous = published()
+    if previous is not None and int(previous.get("retry_at") or 0) > now:
+        write(previous, "waiting after a 429")
+        return
+    if previous is not None and os.environ.get("FEEDS_FULL") != "true":
         try:
             started = get(
                 key,
                 f"[[date::>{stamp(now - LIVE_WINDOW)}]] AND [[date::<{stamp(now)}]]",
                 "date ASC", 200)
         except (urllib.error.URLError, ValueError, OSError) as error:
-            sys.exit(f"cs2: {error}")
+            fail(previous, now, error)
         write(refresh(previous, started, now), "live")
         return
     try:
@@ -354,7 +361,7 @@ def main():
             f"[[finished::1]] AND [[date::>{stamp(now - RESULTS)}]]",
             "date DESC", 40)
     except (urllib.error.URLError, ValueError, OSError) as error:
-        sys.exit(f"cs2: {error}")
+        fail(previous, now, error)
     built = feed(open_matches + majors, results, now)
     pages = staff_pages(built)
     if pages:
@@ -369,6 +376,19 @@ def main():
             # Coaches are extra: the feed goes out without them.
             print(f"cs2: no coaches, {error}", file=sys.stderr)
     write(built, "full")
+
+
+def fail(previous, now, error):
+    """Publishes the last feed again, so the file never disappears, and exits with the error.
+    After a 429 it also marks when to ask again."""
+    limited = isinstance(error, urllib.error.HTTPError) and error.code == 429
+    if previous is not None:
+        if limited:
+            previous["retry_at"] = now + COOLDOWN
+        write(previous, "kept")
+    # The reason only: LiquipediaDB's error bodies can echo the key.
+    reason = "HTTP 429, waiting an hour" if limited else type(error).__name__
+    sys.exit(f"cs2: {reason}")
 
 
 def write(built, mode):
