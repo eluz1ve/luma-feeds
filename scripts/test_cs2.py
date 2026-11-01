@@ -135,10 +135,10 @@ class Feed(unittest.TestCase):
         self.assertEqual(built["full_at"], NOW - 300, "a live run keeps the full run's time")
         self.assertEqual(built["updated"], NOW)
 
-    def test_full_runs_come_every_fifteen_minutes(self):
+    def test_full_runs_come_every_seven_minutes(self):
         self.assertEqual(mode.due(None, NOW), (True, NOW))
-        self.assertEqual(mode.due({"full_at": NOW - 600}, NOW), (False, NOW - 600))
-        self.assertEqual(mode.due({"full_at": NOW - 860}, NOW), (True, NOW))
+        self.assertEqual(mode.due({"full_at": NOW - 120}, NOW), (False, NOW - 120))
+        self.assertEqual(mode.due({"full_at": NOW - 400}, NOW), (True, NOW))
         self.assertEqual(mode.due({"full_at": "x"}, NOW), (True, NOW))
 
 

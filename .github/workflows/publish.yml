@@ -3,7 +3,7 @@ name: Publish feeds
 on:
   schedule:
     # A fallback: GitHub runs schedules hours apart under load. The `next` job below starts
-    # the following run itself, three minutes after this one began.
+    # the following run itself, seven minutes after this one began.
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
@@ -28,7 +28,7 @@ jobs:
         run: python3 -m unittest scripts/test_esports.py scripts/test_cs2.py
       - name: Full or live run
         id: mode
-        # Every 15 minutes a full run rebuilds everything; the runs in between refresh only the
+        # Every 7 minutes a full run rebuilds everything; the runs in between refresh only the
         # Counter-Strike 2 feed's started matches and carry the rest over (scripts/mode.py).
         run: python3 scripts/mode.py
       - name: Carry over the esports feed
@@ -56,7 +56,7 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@v4
 
-  # Keeps the runs three minutes apart: waits until three minutes after this run started, then
+  # Keeps the runs seven minutes apart: waits until seven minutes after this run started, then
   # dispatches the next run (a workflow_dispatch from GITHUB_TOKEN does start runs). Runs even
   # if publishing failed. Starts nothing if a run is already waiting, so a scheduled run and the
   # chain never double up. The repository variable FEEDS_CHAIN=off stops the chain.
@@ -72,10 +72,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - name: Wait until three minutes after this run started
+      - name: Wait until seven minutes after this run started
         run: |
           started=$(gh run view "${{ github.run_id }}" --json createdAt -q .createdAt)
-          wait=$(( 180 - ($(date -u +%s) - $(date -u -d "$started" +%s)) ))
+          wait=$(( 420 - ($(date -u +%s) - $(date -u -d "$started" +%s)) ))
           if [ "$wait" -gt 0 ]; then sleep "$wait"; fi
       - name: Start the next run
         run: |

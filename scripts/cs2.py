@@ -1,11 +1,10 @@
 """Builds Luma's Counter-Strike 2 feed from LiquipediaDB: live, upcoming and just-finished matches.
 
 Reads LIQUIPEDIA_KEY from the environment and writes site/cs2/matches.json. The key stays in the
-repository's secrets; devices only read the published file. Runs come every 3 minutes: a full run
-(three requests to the match table: the schedule, the biggest events and results, and one for the
-teams' coaches) every 15 minutes, and between them a live run (one request: what started in the
-last hours) that keeps the rest of the last published feed: 4 × 3 + 16 × 1 = 28 match requests
-an hour. When LiquipediaDB answers 429 (the key's limit is used up), runs keep the last published
+repository's secrets; devices only read the published file. Runs come every 7 minutes, each a full
+run: three requests to the match table (the schedule, the biggest events and results) and one for
+the teams' coaches, about 26 match requests an hour. A live run (one request: what started in the
+last hours, keeping the rest of the last published feed) remains for runs closer together. When LiquipediaDB answers 429 (the key's limit is used up), runs keep the last published
 feed and make no request for `COOLDOWN`, as further requests would keep the limit exhausted.
 Liquipedia's data is CC-BY-SA 3.0, so apps showing the feed credit Liquipedia.
 """

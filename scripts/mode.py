@@ -1,4 +1,4 @@
-"""Decides whether this run is a full one: every 15 minutes, the feeds are rebuilt in full; in
+"""Decides whether this run is a full one: every 7 minutes, the feeds are rebuilt in full; in
 between, only the Counter-Strike 2 feed's live matches are, and the other files are carried over
 from what is published. Writes `full=true|false` and `full_at=<Unix seconds>` to $GITHUB_OUTPUT.
 """
@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 
 INDEX = "https://eluz1ve.github.io/luma-feeds/index.json"
-FULL_EVERY = 15 * 60
+FULL_EVERY = 7 * 60
 # Runs start a little late or early; a run this close to the interval is a full one.
 SLACK = 45
 

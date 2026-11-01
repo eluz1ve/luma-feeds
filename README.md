@@ -1,9 +1,9 @@
 # luma-feeds
 
 Test data feeds for the [Luma](https://github.com/eluz1ve/lg-luma) TV launcher, published to
-GitHub Pages every 3 minutes by `.github/workflows/publish.yml`. GitHub runs schedules hours
-apart under load, so each run starts the next itself, three minutes after it began; the schedule
-only restarts that chain if it ever breaks. Every 15 minutes a run rebuilds every feed; the runs
+GitHub Pages every 7 minutes by `.github/workflows/publish.yml`. GitHub runs schedules hours
+apart under load, so each run starts the next itself, seven minutes after it began; the schedule
+only restarts that chain if it ever breaks. Every 7 minutes a run rebuilds every feed; the runs
 in between refresh only the Counter-Strike 2 feed's started matches and carry the rest over
 (`scripts/mode.py`, `scripts/carry.py`). Set the repository variable `FEEDS_CHAIN` to `off`
 (Settings › Secrets and variables › Actions › Variables) to stop it.
